@@ -9,6 +9,8 @@
 #include <QScreen>
 #include <QList>
 #include <QSettings>
+#include <QTextEdit>
+#include <QAction>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -57,11 +59,15 @@ private slots:
     void onStopButtonClicked();
     void onCaptureNowButtonClicked();
     void onBrowseButtonClicked();
+    void onClearLogButtonClicked();
+    void onSaveLogButtonClicked();
+    void onOpenOutputFolder();
     
     // 设置变更
     void onMonitorComboChanged(int index);
     void onIntervalChanged(int value);
     void onFormatComboChanged(const QString &format);
+    void onQualityChanged(int value);
     
     // 定时器事件
     void onCaptureTimerTimeout();
@@ -69,11 +75,18 @@ private slots:
     
     // 系统托盘事件
     void onTrayIconActivated(QSystemTrayIcon::ActivationReason reason);
-    void onTrayMenuActionTriggered(QAction *action);
+    
+    // 菜单动作
+    void onPreferencesTriggered();
+    void onAlwaysOnTopToggled(bool checked);
+    void onShowTrayIconToggled(bool checked);
     
     // 其他槽函数
     void updateScreensInfo();
     void showAboutDialog();
+    
+    // 自动滚动日志
+    void onAutoScrollToggled(bool checked);
 
 private:
     // UI组件
@@ -99,6 +112,8 @@ private:
     
     // 私有方法
     void initializeUI();
+    void initializeMenuBar();
+    void initializeToolBar();
     void initializeConnections();
     void initializeTrayIcon();
     void loadSettings();
@@ -116,6 +131,8 @@ private:
     void updateStatus(const QString &message);
     void updateCounter();
     void updateScreenshotPreview(const QPixmap &pixmap);
+    void logMessage(const QString &message);
+    void openOutputFolder();
     
     // 验证方法
     bool validateSettings();
