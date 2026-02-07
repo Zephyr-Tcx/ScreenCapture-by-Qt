@@ -3,6 +3,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QCloseEvent>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDesktopWidget>
@@ -17,6 +18,7 @@
 #include <QScreen>
 #include <QStandardPaths>
 #include <QStyle>
+#include <QTextStream>
 #include <QTime>
 #include <QVBoxLayout>
 #include <QWindow>
@@ -43,6 +45,10 @@ ScreenCapturer::ScreenCapturer(QWidget *parent)
     // 初始化UI
     initializeUI();
     
+    // 初始化菜单栏和工具栏
+    initializeMenuBar();
+    initializeToolBar();
+    
     // 初始化连接
     initializeConnections();
     
@@ -57,6 +63,10 @@ ScreenCapturer::ScreenCapturer(QWidget *parent)
     
     // 启动更新定时器（每秒更新一次）
     m_updateTimer->start(1000);
+    
+    // 记录启动日志
+    logMessage("应用程序启动");
+    logMessage("屏幕截图工具已就绪");
     
     // 更新状态
     updateStatus("就绪");
@@ -74,13 +84,14 @@ void ScreenCapturer::initializeUI()
 {
     // 设置窗口属性
     setWindowTitle("屏幕截图工具 v1.0");
-    setMinimumSize(600, 500);
+    setMinimumSize(680, 580);
     
     // 设置图标
     setWindowIcon(QIcon(":/icons/camera.png"));
     
     // 初始化控件状态
     ui->stopButton->setEnabled(false);
+    ui->actionStopCapture->setEnabled(false);
     ui->previewLabel->setScaledContents(true);
     ui->previewLabel->setMinimumSize(200, 150);
     ui->previewLabel->setFrameShape(QFrame::Box);
@@ -110,6 +121,30 @@ void ScreenCapturer::initializeUI()
     ensureDirectoryExists(m_outputDirectory);
 }
 
+// 初始化菜单栏
+void ScreenCapturer::initializeMenuBar()
+{
+    // 连接菜单动作
+    connect(ui->actionCaptureNow, &QAction::triggered, this, &ScreenCapturer::onCaptureNowButtonClicked);
+    connect(ui->actionStartCapture, &QAction::triggered, this, &ScreenCapturer::onStartButtonClicked);
+    connect(ui->actionStopCapture, &QAction::triggered, this, &ScreenCapturer::onStopButtonClicked);
+    connect(ui->actionExit, &QAction::triggered, this, &QMainWindow::close);
+    connect(ui->actionPreferences, &QAction::triggered, this, &ScreenCapturer::onPreferencesTriggered);
+    connect(ui->actionAbout, &QAction::triggered, this, &ScreenCapturer::showAboutDialog);
+    connect(ui->actionOpenOutputFolder, &QAction::triggered, this, &ScreenCapturer::onOpenOutputFolder);
+    
+    // 连接检查框动作
+    connect(ui->actionAlwaysOnTop, &QAction::toggled, this, &ScreenCapturer::onAlwaysOnTopToggled);
+    connect(ui->actionShowTrayIcon, &QAction::toggled, this, &ScreenCapturer::onShowTrayIconToggled);
+}
+
+// 初始化工具栏
+void ScreenCapturer::initializeToolBar()
+{
+    // 工具栏已经通过UI文件设置好
+    // 这里可以添加额外的工具栏设置
+}
+
 // 初始化信号槽连接
 void ScreenCapturer::initializeConnections()
 {
@@ -119,6 +154,8 @@ void ScreenCapturer::initializeConnections()
     connect(ui->captureNowButton, &QPushButton::clicked, this, &ScreenCapturer::onCaptureNowButtonClicked);
     connect(ui->browseButton, &QPushButton::clicked, this, &ScreenCapturer::onBrowseButtonClicked);
     connect(ui->aboutButton, &QPushButton::clicked, this, &ScreenCapturer::showAboutDialog);
+    connect(ui->clearLogButton, &QPushButton::clicked, this, &ScreenCapturer::onClearLogButtonClicked);
+    connect(ui->saveLogButton, &QPushButton::clicked, this, &ScreenCapturer::onSaveLogButtonClicked);
     
     // 设置变更事件
     connect(ui->monitorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -127,10 +164,15 @@ void ScreenCapturer::initializeConnections()
             this, &ScreenCapturer::onIntervalChanged);
     connect(ui->formatCombo, &QComboBox::currentTextChanged,
             this, &ScreenCapturer::onFormatComboChanged);
+    connect(ui->qualitySpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &ScreenCapturer::onQualityChanged);
     
     // 定时器事件
     connect(m_captureTimer, &QTimer::timeout, this, &ScreenCapturer::onCaptureTimerTimeout);
     connect(m_updateTimer, &QTimer::timeout, this, &ScreenCapturer::onUpdateTimerTimeout);
+    
+    // 自动滚动检查框
+    connect(ui->autoScrollCheck, &QCheckBox::toggled, this, &ScreenCapturer::onAutoScrollToggled);
 }
 
 // 初始化系统托盘
@@ -179,6 +221,8 @@ void ScreenCapturer::loadSettings()
 {
     m_settings->beginGroup("MainWindow");
     restoreGeometry(m_settings->value("geometry").toByteArray());
+    bool alwaysOnTop = m_settings->value("alwaysOnTop", false).toBool();
+    bool showTrayIcon = m_settings->value("showTrayIcon", true).toBool();
     m_settings->endGroup();
     
     m_settings->beginGroup("CaptureSettings");
@@ -192,6 +236,8 @@ void ScreenCapturer::loadSettings()
     ui->directoryEdit->setText(m_outputDirectory);
     ui->intervalSpin->setValue(interval);
     ui->qualitySpin->setValue(m_imageQuality);
+    ui->actionAlwaysOnTop->setChecked(alwaysOnTop);
+    ui->actionShowTrayIcon->setChecked(showTrayIcon);
     
     // 设置格式
     for (int i = 0; i < ui->formatCombo->count(); ++i) {
@@ -205,6 +251,9 @@ void ScreenCapturer::loadSettings()
     
     // 确保目录存在
     ensureDirectoryExists(m_outputDirectory);
+    
+    // 应用窗口置顶设置
+    onAlwaysOnTopToggled(alwaysOnTop);
 }
 
 // 保存设置
@@ -212,6 +261,8 @@ void ScreenCapturer::saveSettings()
 {
     m_settings->beginGroup("MainWindow");
     m_settings->setValue("geometry", saveGeometry());
+    m_settings->setValue("alwaysOnTop", ui->actionAlwaysOnTop->isChecked());
+    m_settings->setValue("showTrayIcon", ui->actionShowTrayIcon->isChecked());
     m_settings->endGroup();
     
     m_settings->beginGroup("CaptureSettings");
@@ -263,6 +314,8 @@ void ScreenCapturer::updateScreensInfo()
     if (m_monitorIndex >= 0 && m_monitorIndex < ui->monitorCombo->count()) {
         ui->monitorCombo->setCurrentIndex(m_monitorIndex);
     }
+    
+    logMessage(QString("检测到 %1 个显示器").arg(m_monitors.size()));
 }
 
 // 捕获屏幕
@@ -272,6 +325,7 @@ QPixmap ScreenCapturer::captureScreen(int monitorIndex)
         // 捕获所有显示器
         QList<QScreen*> screens = QGuiApplication::screens();
         if (screens.isEmpty()) {
+            logMessage("错误: 未检测到显示器");
             return QPixmap();
         }
         
@@ -330,6 +384,7 @@ QPixmap ScreenCapturer::captureScreen(int monitorIndex)
         }
     }
     
+    logMessage(QString("错误: 无法捕获显示器 %1 的图像").arg(monitorIndex));
     return QPixmap();
 }
 
@@ -390,7 +445,13 @@ bool ScreenCapturer::ensureDirectoryExists(const QString &path)
 {
     QDir dir(path);
     if (!dir.exists()) {
-        return dir.mkpath(".");
+        bool success = dir.mkpath(".");
+        if (success) {
+            logMessage(QString("创建目录: %1").arg(path));
+        } else {
+            logMessage(QString("错误: 无法创建目录 %1").arg(path));
+        }
+        return success;
     }
     return true;
 }
@@ -408,7 +469,7 @@ void ScreenCapturer::showNotification(const QString &title, const QString &messa
 // 更新状态
 void ScreenCapturer::updateStatus(const QString &message)
 {
-    ui->statusLabel->setText("状态: " + message);
+    ui->statusLabel->setText(message);
     
     // 同时更新托盘提示
     if (m_trayIcon) {
@@ -425,13 +486,30 @@ void ScreenCapturer::updateCounter()
 // 更新截图预览
 void ScreenCapturer::updateScreenshotPreview(const QPixmap &pixmap)
 {
-    if (!pixmap.isNull()) {
+    if (!pixmap.isNull() && ui->previewLabel) {
         // 缩放预览图以适应标签大小
         QSize labelSize = ui->previewLabel->size();
         QPixmap scaledPixmap = pixmap.scaled(labelSize,
                                             Qt::KeepAspectRatio,
                                             Qt::SmoothTransformation);
         ui->previewLabel->setPixmap(scaledPixmap);
+    }
+}
+
+// 记录日志
+void ScreenCapturer::logMessage(const QString &message)
+{
+    QDateTime now = QDateTime::currentDateTime();
+    QString timestamp = now.toString("hh:mm:ss");
+    QString logEntry = QString("[%1] %2").arg(timestamp, message);
+    
+    ui->logTextEdit->append(logEntry);
+    
+    // 自动滚动到底部
+    if (ui->autoScrollCheck->isChecked()) {
+        QTextCursor cursor = ui->logTextEdit->textCursor();
+        cursor.movePosition(QTextCursor::End);
+        ui->logTextEdit->setTextCursor(cursor);
     }
 }
 
@@ -524,13 +602,47 @@ void ScreenCapturer::onBrowseButtonClicked()
         ui->directoryEdit->setText(dir);
         ensureDirectoryExists(dir);
         saveSettings();
+        logMessage(QString("更改保存目录为: %1").arg(dir));
     }
+}
+
+void ScreenCapturer::onClearLogButtonClicked()
+{
+    ui->logTextEdit->clear();
+    logMessage("日志已清空");
+}
+
+void ScreenCapturer::onSaveLogButtonClicked()
+{
+    QString fileName = QFileDialog::getSaveFileName(this,
+                                                   "保存日志文件",
+                                                   QDir::homePath() + "/screencapture_log.txt",
+                                                   "文本文件 (*.txt);;所有文件 (*.*)");
+    if (!fileName.isEmpty()) {
+        QFile file(fileName);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream stream(&file);
+            stream << ui->logTextEdit->toPlainText();
+            file.close();
+            logMessage(QString("日志已保存到: %1").arg(fileName));
+            showNotification("保存成功", "日志文件已保存");
+        } else {
+            logMessage(QString("无法保存日志文件: %1").arg(file.errorString()));
+            QMessageBox::warning(this, "错误", "无法保存日志文件");
+        }
+    }
+}
+
+void ScreenCapturer::onOpenOutputFolder()
+{
+    openOutputFolder();
 }
 
 void ScreenCapturer::onMonitorComboChanged(int index)
 {
     m_monitorIndex = ui->monitorCombo->itemData(index).toInt();
     saveSettings();
+    logMessage(QString("选择显示器: %1").arg(ui->monitorCombo->itemText(index)));
 }
 
 void ScreenCapturer::onIntervalChanged(int value)
@@ -541,6 +653,7 @@ void ScreenCapturer::onIntervalChanged(int value)
         m_captureTimer->start(value * 60 * 1000);
     }
     saveSettings();
+    logMessage(QString("设置截图间隔: %1 分钟").arg(value));
 }
 
 void ScreenCapturer::onFormatComboChanged(const QString &format)
@@ -549,11 +662,20 @@ void ScreenCapturer::onFormatComboChanged(const QString &format)
     if (!selectedFormat.isEmpty()) {
         m_imageFormat = selectedFormat;
         saveSettings();
+        logMessage(QString("设置图片格式: %1").arg(selectedFormat));
     }
+}
+
+void ScreenCapturer::onQualityChanged(int value)
+{
+    m_imageQuality = value;
+    saveSettings();
+    logMessage(QString("设置图片质量: %1%").arg(value));
 }
 
 void ScreenCapturer::onCaptureTimerTimeout()
 {
+    logMessage("定时截图触发");
     captureNow();
 }
 
@@ -587,10 +709,46 @@ void ScreenCapturer::onTrayIconActivated(QSystemTrayIcon::ActivationReason reaso
     }
 }
 
-void ScreenCapturer::onTrayMenuActionTriggered(QAction *action)
+void ScreenCapturer::onPreferencesTriggered()
 {
-    // 已经在initializeTrayIcon中连接了
-    Q_UNUSED(action);
+    // 切换到设置选项卡
+    ui->tabWidget->setCurrentIndex(0);
+    logMessage("打开首选项");
+}
+
+void ScreenCapturer::onAlwaysOnTopToggled(bool checked)
+{
+    Qt::WindowFlags flags = windowFlags();
+    if (checked) {
+        setWindowFlags(flags | Qt::WindowStaysOnTopHint);
+    } else {
+        setWindowFlags(flags & ~Qt::WindowStaysOnTopHint);
+    }
+    show();  // 重新显示窗口使标志生效
+    saveSettings();
+    logMessage(QString("窗口置顶: %1").arg(checked ? "启用" : "禁用"));
+}
+
+void ScreenCapturer::onShowTrayIconToggled(bool checked)
+{
+    if (m_trayIcon) {
+        m_trayIcon->setVisible(checked);
+    }
+    if (!checked) {
+        ui->minimizeToTrayCheck->setChecked(false);
+    }
+    saveSettings();
+    logMessage(QString("系统托盘图标: %1").arg(checked ? "显示" : "隐藏"));
+}
+
+void ScreenCapturer::onAutoScrollToggled(bool checked)
+{
+    if (checked) {
+        QTextCursor cursor = ui->logTextEdit->textCursor();
+        cursor.movePosition(QTextCursor::End);
+        ui->logTextEdit->setTextCursor(cursor);
+    }
+    logMessage(QString("日志自动滚动: %1").arg(checked ? "启用" : "禁用"));
 }
 
 // ==================== 公共方法 ====================
@@ -600,6 +758,7 @@ void ScreenCapturer::setCaptureInterval(int minutes)
     if (minutes >= MIN_INTERVAL && minutes <= MAX_INTERVAL) {
         ui->intervalSpin->setValue(minutes);
         saveSettings();
+        logMessage(QString("设置截图间隔: %1 分钟").arg(minutes));
     }
 }
 
@@ -610,6 +769,7 @@ void ScreenCapturer::setOutputDirectory(const QString &path)
         ui->directoryEdit->setText(path);
         ensureDirectoryExists(path);
         saveSettings();
+        logMessage(QString("设置保存目录: %1").arg(path));
     }
 }
 
@@ -619,6 +779,7 @@ void ScreenCapturer::setMonitorIndex(int index)
         m_monitorIndex = index;
         ui->monitorCombo->setCurrentIndex(index);
         saveSettings();
+        logMessage(QString("设置显示器: %1").arg(ui->monitorCombo->itemText(index)));
     }
 }
 
@@ -640,12 +801,17 @@ void ScreenCapturer::startCapture()
     ui->stopButton->setEnabled(true);
     ui->intervalSpin->setEnabled(false);
     ui->monitorCombo->setEnabled(false);
+    ui->actionStartCapture->setEnabled(false);
+    ui->actionStopCapture->setEnabled(true);
     
     updateStatus("正在定时截图中...");
     updateCounter();
     
+    logMessage(QString("开始定时截图，间隔: %1 分钟").arg(intervalMinutes));
+    
     // 立即截取一张（如果启用）
     if (ui->immediateCheck->isChecked()) {
+        logMessage("执行启动立即截图");
         QTimer::singleShot(100, this, &ScreenCapturer::captureNow);
     }
     
@@ -662,15 +828,20 @@ void ScreenCapturer::stopCapture()
     ui->stopButton->setEnabled(false);
     ui->intervalSpin->setEnabled(true);
     ui->monitorCombo->setEnabled(true);
+    ui->actionStartCapture->setEnabled(true);
+    ui->actionStopCapture->setEnabled(false);
     
     updateStatus("已停止截图");
     ui->nextCaptureLabel->setText("下次截图: --");
     
+    logMessage("停止定时截图");
     showNotification("停止截图", "定时截图已停止");
 }
 
 void ScreenCapturer::captureNow()
 {
+    logMessage("开始截图...");
+    
     // 执行截图
     QPixmap screenshot = captureScreen(m_monitorIndex);
     
@@ -684,22 +855,38 @@ void ScreenCapturer::captureNow()
             QString fullPath = m_outputDirectory + "/" + filename;
             updateStatus(QString("最后保存: %1").arg(filename));
             
+            logMessage(QString("截图成功: %1").arg(filename));
             showNotification("截图成功", QString("已保存到: %1").arg(filename));
             
             // 如果启用了自动打开文件夹，打开文件位置
             if (ui->openFolderCheck->isChecked()) {
-                QDesktopServices::openUrl(QUrl::fromLocalFile(m_outputDirectory));
+                openOutputFolder();
             }
         } else {
             updateStatus("保存失败");
+            logMessage("截图保存失败");
             showNotification("截图失败", "无法保存图片文件");
         }
     } else {
         updateStatus("截图失败");
+        logMessage("截图失败: 无法捕获屏幕图像");
         showNotification("截图失败", "无法捕获屏幕图像");
     }
 }
 
+// 打开输出文件夹
+void ScreenCapturer::openOutputFolder()
+{
+    if (QDir(m_outputDirectory).exists()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(m_outputDirectory));
+        logMessage("打开输出文件夹");
+    } else {
+        logMessage("输出文件夹不存在");
+        QMessageBox::warning(this, "警告", "输出文件夹不存在");
+    }
+}
+
+// 显示关于对话框
 void ScreenCapturer::showAboutDialog()
 {
     QString aboutText = QString(
@@ -713,9 +900,12 @@ void ScreenCapturer::showAboutDialog()
         "<li>自定义保存目录</li>"
         "<li>多种图片格式</li>"
         "<li>系统托盘运行</li>"
+        "<li>日志记录功能</li>"
         "</ul>"
+        "<p>编译时间: %2</p>"
         "<p>版权所有 © 2023 您的公司</p>"
-    ).arg(qApp->applicationVersion());
+    ).arg(qApp->applicationVersion(), __DATE__ " " __TIME__);
     
     QMessageBox::about(this, "关于屏幕截图工具", aboutText);
+    logMessage("显示关于对话框");
 }
