@@ -4,9 +4,13 @@ project(ScreenCaptureTool VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)  # 新增：启用自动UIC处理
 set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
+
+# 添加UI文件
+set(UI_FILES mainwindow.ui)
 
 # 添加资源文件
 qt_add_resources(qrc_files "resources.qrc")
@@ -16,6 +20,7 @@ add_executable(ScreenCaptureTool
     src/main.cpp
     src/mainwindow.cpp
     mainwindow.h
+    ${UI_FILES}      # 添加UI文件
     ${qrc_files}
 )
 
