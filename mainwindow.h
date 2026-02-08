@@ -11,6 +11,10 @@
 #include <QComboBox>
 #include <QLineEdit>
 #include <QLabel>
+#include <QDialog>
+#include <QVBoxLayout>
+#include <QCheckBox>
+#include <QInputDialog>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -60,7 +64,9 @@ private:
     void addFileToList(const QString &filepath);
     void deleteFile(const QString &filepath);
     qint64 calculateDirectorySize(const QString &path);
+    QString formatFileSize(qint64 bytes);
     void showNotification(const QString &title, const QString &message);
+    void verifyResources();
 };
 
 #endif // MAINWINDOW_H
