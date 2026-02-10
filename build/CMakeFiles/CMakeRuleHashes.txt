@@ -1,4 +1,0 @@
-# Hashes of file build rules.
-caeb4e1291573f41d3890bba4dc78c84 CMakeFiles/ScreenCaptureTool_autogen
-7cbdccafc70acebfede2ad9cbf80a669 ScreenCaptureTool_autogen/timestamp
-6b4c4b2e9546b08a509b8ab6dbfc9258 qrc_resources.cpp

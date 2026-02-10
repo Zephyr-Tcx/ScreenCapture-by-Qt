@@ -1,5 +1,0 @@
-D:/ScreenCaptureTool/build/CMakeFiles/ScreenCaptureTool.dir
-D:/ScreenCaptureTool/build/CMakeFiles/edit_cache.dir
-D:/ScreenCaptureTool/build/CMakeFiles/rebuild_cache.dir
-D:/ScreenCaptureTool/build/CMakeFiles/ScreenCaptureTool_autogen_timestamp_deps.dir
-D:/ScreenCaptureTool/build/CMakeFiles/ScreenCaptureTool_autogen.dir
